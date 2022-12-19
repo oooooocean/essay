@@ -1,8 +1,15 @@
 ## [Swift 结构化并发 _ OneV's Den](https://onevcat.com/2021/09/structured-concurrency/)
 1. 如何开启一个任务上下文?
+	1. Task.init
+	2. Task.detached
 2. 如何在任务上下文中构建子节点?
+	1. TaskGroup
+	2. async let
 3. 任务上下文是如何结束的?
 4. 非结构化并发任务如何创建?
+5. 结构化并发要解决的问题? 
+    - 逻辑正确
+    - 内存安全
 
 ### 1. 非结构化并发的问题
 Swift 当前的并发手段, 最常见的是使用Dispatch库(GCD)将任务派发到指定队列, 并通过回调函数获取结果. 这些被派发的操作在运行时中, 并不知道自己从哪里来, 它们在自己的线程中拥有调用栈, 生命周期和开始的调用方作用域无关.
@@ -76,7 +83,7 @@ let result = await v1 + v2
 - `static Task.sleep`
 - `Task.value`
 
-### 4. 非结构化并发
+### 5. 非结构化并发
 通过`Task.init`或`Task.detached`创建的Task.
 1. 超过作用域不会有隐式取消或等待.
 2. 外层Task的取消, 并不会传递到内层的Task, 即没有树形关系.
@@ -98,5 +105,57 @@ func foo() async {
     
     // 此时 async let 创建的Task取消
     // 右侧的 Task 不会取消
+}
+```
+
+### 6. Actor: Sendable
+作为模型当中的基本计算单元, 由`state` `mailbox` `executor` 三部分组成, 提供数据的安全访问.
+1. 属性隔离(actor-isolated): 在内部提供一个隔离域, 在内部访问时, 可以不用使用队列和锁; 在外部对Actor的成员进行访问时, 需要明确切换到Actor的隔离域, 此时编译器自动将访问函数转换为异步函数.
+2. 原理: 发送消息到mailbox, 然后executor串行执行mailbox中的消息以确保state是线程安全的(封装了私有队列的class).
+
+> 要解决的问题?
+> 为了解决数据竞争的问题.
+> 
+> 以前的解决方案?
+> 1. 使用私有的`DispatchQueue`将对数据的操作保护起来.
+> 2. 使用锁.
+
+#### 6.1 外部函数修改Actor
+即需要明确声明`actor-isolated`.
+
+```swift
+actor Account {
+	var balance: Int
+}
+
+func deposit(to account: isolated Account) { // 编译器自动转换为 async
+	account.balance += 100
+}
+
+await deposit(to: account)
+```
+
+#### 6.2 不需要隔离的属性或函数
+声明为`nonisolated`.
+
+### 7. MainActor: GlobalActor
+将对属性或者函数的访问隔离到主线程中执行.
+
+### 8. Task 与 Actor
+
+### QA
+
+#### 1. Task执行在什么线程?
+结构化并发:
+1. 入口是main
+2. 执行在任意线程(由调度器决定, 这里是默认调度器)
+3. 出口是main
+
+```swift
+Task {
+	print(Thread.current)
+	MainActor.run {
+		print(Thread.current)
+	}
 }
 ```
