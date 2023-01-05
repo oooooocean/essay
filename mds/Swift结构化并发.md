@@ -10,21 +10,41 @@
 5. 结构化并发要解决的问题? 
     - 逻辑正确
     - 内存安全
+6. async关键字的作用? 它能提供异步能力吗? Task呢?
 
-### 1. 非结构化并发的问题
+### 协程
+**非抢占式或者说协作式**的计算机程序**并发调度**的实现, 程序可以主动挂起或者恢复.
+角色: `Task`类似是异步函数的运行环境. `Async Function`是具体的异步任务.
+
+### Swift 如何实现协程
+`Continuation`
+
+```swift
+func foo() async -> Int {
+    // 1. 获取 continuation
+    await withCheckedContinuation { continuation in
+        DispatchQueue.global().async {
+            // 2. 恢复
+            continuation.resume(returning: Int(arc4random()))
+        }
+    }
+}
+```
+
+### 非结构化并发的问题
 Swift 当前的并发手段, 最常见的是使用Dispatch库(GCD)将任务派发到指定队列, 并通过回调函数获取结果. 这些被派发的操作在运行时中, 并不知道自己从哪里来, 它们在自己的线程中拥有调用栈, 生命周期和开始的调用方作用域无关.
 ![](https://onevcat.com/assets/images/2021/unstructured-concurrency.png)
 即使在一段时间后, 派发出去的操作通过回调函数回到闭包中, 但是它并没有关于原来调用者的信息 (比如调用栈等)，这只不过是一次孤独的跳转.
 1. 由于和调用者属于不同的调用栈, 所以无法以抛出的方式向上传递错误, 只能将error作为回调函数参数.
 2. goto的高级形式: 借由线程实现了任意跳转, 派发出去的操作执行会回调后, 后续无法预测.
 
-### 2. 结构化并发目标
+### 结构化并发目标
 单一数据流, 结果可预测.
 保证控制流路径的单一入口和单一出口. 程序可以产生多个控制流来实现并发, 但是所有的并发路径在出口时都应该处于完成(或取消)状态, 并合并到一起.
 ![](https://onevcat.com/assets/images/2021/structured-concurrency.png)
 
-### 3. 基于Task的结构化并发
-构建任务的从属关系(树). 特点:
+### 基于Task的结构化并发
+构建任务的从属关系(树), 即并发的入口. 特点:
 1. 有优先级和取消标识, 在子任务(叶子节点)中执行异步函数.
 2. 父任务取消会传递到子任务.
 3. 子任务会将结果上报到父任务, 在抛出结果/错误之前, 父任务处于pending.
@@ -76,14 +96,14 @@ let result = await v1 + v2
 > Task.init: 继承当前任务环境.
 > Task.detached: 不继承当前任务环境.
 
-### 4. 其他Api
+### 其他Api
 - `withUnsafeCurrentTask`: 获取当前Task.
 - `static Task.isCancelled`
 - `static Task.currentPriority`
 - `static Task.sleep`
 - `Task.value`
 
-### 5. 非结构化并发
+### 非结构化并发
 通过`Task.init`或`Task.detached`创建的Task.
 1. 超过作用域不会有隐式取消或等待.
 2. 外层Task的取消, 并不会传递到内层的Task, 即没有树形关系.
@@ -108,7 +128,7 @@ func foo() async {
 }
 ```
 
-### 6. Actor: Sendable
+### Actor: Sendable
 作为模型当中的基本计算单元, 由`state` `mailbox` `executor` 三部分组成, 提供数据的安全访问.
 1. 属性隔离(actor-isolated): 在内部提供一个隔离域, 在内部访问时, 可以不用使用队列和锁; 在外部对Actor的成员进行访问时, 需要明确切换到Actor的隔离域, 此时编译器自动将访问函数转换为异步函数.
 2. 原理: 发送消息到mailbox, 然后executor串行执行mailbox中的消息以确保state是线程安全的(封装了私有队列的class).
@@ -120,7 +140,7 @@ func foo() async {
 > 1. 使用私有的`DispatchQueue`将对数据的操作保护起来.
 > 2. 使用锁.
 
-#### 6.1 外部函数修改Actor
+#### 1 外部函数修改Actor
 即需要明确声明`actor-isolated`.
 
 ```swift
@@ -135,13 +155,13 @@ func deposit(to account: isolated Account) { // 编译器自动转换为 async
 await deposit(to: account)
 ```
 
-#### 6.2 不需要隔离的属性或函数
+#### 2 不需要隔离的属性或函数
 声明为`nonisolated`.
 
-### 7. MainActor: GlobalActor
+### MainActor: GlobalActor
 将对属性或者函数的访问隔离到主线程中执行.
 
-### 8. Task 与 Actor
+### Task 与 Actor
 
 ### QA
 
