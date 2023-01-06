@@ -11,10 +11,11 @@
     - 逻辑正确
     - 内存安全
 6. async关键字的作用? 它能提供异步能力吗? Task呢?
+7. 如何保证TaskGroup中结果的顺序和添加顺序一致?
 
 ### 协程
 **非抢占式或者说协作式**的计算机程序**并发调度**的实现, 程序可以主动挂起或者恢复.
-角色: `Task`类似是异步函数的运行环境. `Async Function`是具体的异步任务.
+角色: `Task`类似是异步函数的运行环境. `Async Function`是具体的异步任务. `调度器`
 
 ### Swift 如何实现协程
 `Continuation`
@@ -76,7 +77,7 @@ let result = await v1 + v2
 
 > AsyncSequence:
 > 
-> 可以使用`for await`的语法来获取子任务的执行结果. group 中的某个任务完成时, 它的结果将被放到异步序列的缓冲区中.
+> 可以使用`for await`的语法来获取子任务的执行结果. group 中的某个任务完成时(无序), 它的结果将被放到异步序列的缓冲区中.
 > 每当 group 的 next 会被调用时, 如果缓冲区里有值, 异步序列就将它作为下一个值给出; 如果缓冲区为空, 那么就等待下一个任务完成.
 
 > group 隐式等待:
@@ -178,4 +179,25 @@ Task {
 		print(Thread.current)
 	}
 }
+```
+
+#### 2. Task 如何取消
+1. Task的取消只是一个状态标记, 不会强制Task执行体中断, 需要内部执行逻辑的响应.
+2. 通过`Task.isCancelled`来检查是否取消.
+3. 通过抛出`Swift.CancellationError()`/`Task.checkCancellation()`异常来结束Task.
+4. 通过调用能抛出取消错误的api.
+
+```swift
+let task = Task {
+    print("start")
+    await Task.sleep(1_000_000_000)
+    print("end")
+}
+await Task.sleep(500_000_000) // try await Task.sleep(nanoseconds: 1_000_000_000)
+task.cancel()
+print(await task.result)
+
+// start
+// end
+// success()
 ```
